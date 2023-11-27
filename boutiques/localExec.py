@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import shutil
 import sys
 import re
 import simplejson as json
@@ -1334,7 +1335,7 @@ class LocalExecutor(object):
         # Files are hashed
         else:
             md5sum = computeMD5(path)
-            return {'file-name': filename, 'md5sum': md5sum}
+            return {'file-name': filename, 'file-path':path, 'md5sum': md5sum}
 
     # Private method to publish data collection objects to file
     # summary, publicInput an publicOutput are combined and
@@ -1357,6 +1358,13 @@ class LocalExecutor(object):
         file = open(file_path, 'w+')
         file.write(content)
         file.close()
+        if self.cache:
+            if not os.path.exists(self.cache):
+                print_info("Invalid path: {}. Cache files saved in the working-directory.".format(os.path.abspath(self.cache)))
+                shutil.copy(file_path, os.getcwd())
+            else :
+                shutil.copy(file_path, self.cache)
+                print_info("Cache files saved in: {}.".format(os.path.abspath(self.cache)))
         if self.debug:
             print_info("Data capture from execution saved to cache as {}"
                        .format(filename))
