@@ -1360,11 +1360,11 @@ class LocalExecutor(object):
         file.close()
         if self.cache:
             if not os.path.exists(self.cache):
-                print_info("Invalid path: {}. Cache files saved in the working-directory.".format(os.path.abspath(self.cache)))
+                print_info("Invalid path: {}, cache files saved in the default directory {}".format(os.path.abspath(self.cache), file_path))
                 shutil.copy(file_path, os.getcwd())
             else :
                 shutil.copy(file_path, self.cache)
-                print_info("Cache files saved in: {}.".format(os.path.abspath(self.cache)))
+                print_info("Cache files saved in: {}/{}".format(os.path.abspath(self.cache),filename))
         if self.debug:
             print_info("Data capture from execution saved to cache as {}"
                        .format(filename))
