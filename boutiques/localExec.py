@@ -1358,13 +1358,20 @@ class LocalExecutor(object):
         file = open(file_path, 'w+')
         file.write(content)
         file.close()
-        if self.cache:
-            if not os.path.exists(self.cache):
-                print_info("Invalid path: {}, cache files saved in the default directory {}".format(os.path.abspath(self.cache), file_path))
+        if self.provenance_path:
+            if os.path.exists(self.provenance_path):
+                if os.path.isfile(self.provenance_path):
+                    shutil.copy(file_path, self.provenance_path)
+                    print_info("provenance file already exists, overwritting file {}, provenance file saved in {}".format((os.path.basename(self.provenance_path)), self.provenance_path))
+                elif os.path.isdir(self.provenance_path):
+                    shutil.copy(file_path, os.path.join(self.provenance_path, filename))
+                    print_info("provenance file saved as {}".format(os.path.join(self.provenance_path, filename)))
+            elif os.path.exists(os.path.dirname(self.provenance_path)):
+                shutil.copy(file_path, self.provenance_path)
+                print_info("provenance file saved as {}".format(self.provenance_path))
+            else:
+                print_info("Invalid path: {}, provenance file saved in the default directory {}".format(os.path.abspath(self.provenance_path), file_path))
                 shutil.copy(file_path, os.getcwd())
-            else :
-                shutil.copy(file_path, self.cache)
-                print_info("Cache files saved in: {}/{}".format(os.path.abspath(self.cache),filename))
         if self.debug:
             print_info("Data capture from execution saved to cache as {}"
                        .format(filename))
