@@ -67,20 +67,23 @@ class Importer():
                         "'schema-version'=0.4")
         descriptor["schema-version"] = "0.5"
 
-        if "container-image" in descriptor.keys():
-            if "singularity" == descriptor["container-image"]["type"]:
-                url = descriptor["container-image"]["url"]
+        if "container-image" in descriptor:
+            container_image = descriptor["container-image"]
+            image_type = container_image.get("type")
+
+            if image_type in {"singularity", "apptainer"}:
+                url = container_image.get("url", "")
                 img = url.split("://")
                 if len(img) == 1:
-                    descriptor["container-image"]["image"] = img[0]
+                    container_image["image"] = img[0]
                 elif len(img) == 2:
-                    descriptor["container-image"]["image"] = img[1]
-                    descriptor["container-image"]["index"] = img[0] + "://"
-                del descriptor["container-image"]["url"]
-            elif ("docker" == descriptor["container-image"]["type"] and
-                  descriptor["container-image"].get("index")):
-                url = descriptor["container-image"]["index"].split("://")[-1]
-                descriptor["container-image"]["index"] = url
+                    container_image["image"] = img[1]
+                    container_image["index"] = img[0] + "://"
+                container_image.pop("url", None)
+            elif image_type == "docker" and container_image.get("index"):
+                url = container_image["index"].split("://")[-1]
+                container_image["index"] = url
+
 
         if "walltime-estimate" in descriptor.keys():
             descriptor["suggested-resources"] =\

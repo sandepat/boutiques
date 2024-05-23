@@ -30,7 +30,8 @@ class CreateDescriptor(object):
         if(kwargs.get('docker_image')):
             self.parse_docker(self.descriptor,
                               kwargs.get('docker_image'),
-                              kwargs.get('use_singularity'))
+                              kwargs.get('use_singularity'),
+                              kwargs.get('use_apptainer'))
 
         self.sp_count = 0
         if parser is not None:
@@ -62,12 +63,16 @@ class CreateDescriptor(object):
         argdict = {k: v for k, v in argdict.items() if v is not None}
         return argdict
 
-    def parse_docker(self, descriptor, docker_image_name, use_singularity):
+    def parse_docker(self, descriptor, docker_image_name, use_singularity, use_apptainer):
         cont_image = {}
 
         # Basic image config
         if use_singularity:
             cont_image['type'] = 'singularity'
+            cont_image['index'] = 'docker://'
+            cont_image['image'] = docker_image_name
+        elif use_apptainer:
+            cont_image['type'] = 'apptainer'
             cont_image['index'] = 'docker://'
             cont_image['image'] = docker_image_name
         else:

@@ -241,7 +241,7 @@ class LocalExecutor(object):
                 os.environ[envVarName] = envVarValue
                 envVars[envVarName] = envVarValue
         # Container script constant name
-        # Note that docker/singularity cannot do a local volume
+        # Note that docker/singularity/apptainer cannot do a local volume
         # mount of files starting with a '.', hence this one does not
         millitime = int(time.time()*1000)
         dsname = ('temp-' +
@@ -256,11 +256,12 @@ class LocalExecutor(object):
             conTypeToUse = \
                 self._chooseContainerTypeToUse(conType,
                                                self.forceSingularity,
+                                               self.forceApptainer,
                                                self.forceDocker)
             # Pull the container
             (conPath, container_location) = self.prepare(conTypeToUse)
             # Generate command script
-            # Get the supported shell by the docker or singularity
+            # Get the supported shell by the docker or singularity/apptainer
             cmdString = "#!{}".format(self.shell)
             if self.shell == "/bin/sh":
                 cmdString += " -l"
@@ -274,6 +275,7 @@ class LocalExecutor(object):
             if envVars:
                 for (key, val) in list(envVars.items()):
                     envString += "SINGULARITYENV_{0}='{1}' ".format(key, val)
+                    envString += "APPTAINERENV_{0}='{1}' ".format(key, val)
             # Change launch (working) directory if desired
             launchDir = self.launchDir
             if launchDir is None:
@@ -391,6 +393,19 @@ class LocalExecutor(object):
                                      ' -W ' + launchDir + ' ' +
                                      conOptsString +
                                      str(conPath) + ' ' + dsname)
+            elif conTypeToUse == 'apptainer':
+                envString = ""
+                if envVars:
+                    for (key, val) in list(envVars.items()):
+                        envString += "APPTAINERENV_{0}='{1}' ".format(key,
+                                                                      val)
+                apptainer_mounts = '-B ' + ' -B '.join(mount_strings)
+                container_command = (envString + 'apptainer exec '
+                                     '--cleanenv ' +
+                                     apptainer_mounts +
+                                     ' -W ' + launchDir + ' ' +
+                                     conOptsString +
+                                     str(conPath) + ' ' + dsname)
             (stdout, stderr), exit_code = self._localExecute(container_command)
         # Otherwise, just run command locally
         else:
@@ -453,7 +468,7 @@ class LocalExecutor(object):
         return executor_output
 
     # Looks for the container image locally and pulls it if not found
-    # Returns a tuple containing the container filename (for Singularity)
+    # Returns a tuple containing the container filename (for Singularity/apptainer)
     # and the container location (local or pulled)
     def prepare(self, conTypeToUse=None):
         con = self.con
@@ -477,9 +492,9 @@ class LocalExecutor(object):
                 container_location = "Pulled from Docker"
             return (conName, container_location)
 
-        elif conTypeToUse == 'singularity':
+        elif conTypeToUse in ['singularity']:
             if conType == 'docker':
-                # We're running a Docker image in Singularity
+                # We're running a Docker image in Singularity/apptainer
                 conIndex = "docker://" + (conIndex if
                                           (conIndex is not None and
                                            conIndex != "" and
@@ -542,20 +557,90 @@ class LocalExecutor(object):
             if self._singConExists(conName, imageDir):
                 conPath = op.abspath(op.join(imageDir, conName))
                 return conPath, "Local ({0})".format(conName)
-            raise_error(ExecutorError, "Unable to retrieve Singularity "
+            raise_error(ExecutorError, "Unable to retrieve Singularity/apptainer"
                         "image.")
 
-    # Private method that checks if a Singularity image exists locally
+
+        elif conTypeToUse in ['apptainer']:
+            if conType == 'docker':
+                # We're running a Docker image in Singularity/apptainer
+                conIndex = "docker://" + (conIndex if
+                                          (conIndex is not None and
+                                           conIndex != "" and
+                                           conIndex != "docker://") else "")
+
+            # If present, assign index in conImage to conIndex
+            if re.search(r"^[a-zA-Z0-9]+://", conImage) is not None:
+                conIndex = re.match(r"^[a-zA-Z0-9]+://", conImage).group()
+                conImage = conImage.replace(conIndex, "")
+            if not conIndex:
+                conIndex = "shub://"
+            if not conIndex.endswith("/"):
+                conIndex = conIndex + "/"
+
+            if self.imagePath:
+                conName = op.basename(self.imagePath)
+                imageDir = op.normpath(op.dirname(self.imagePath))
+            else:
+                conName = conImage.replace("/", "-").replace(":", "-") + ".simg"
+                imageDir = op.normpath("")
+
+            # Check if container already exists
+            if self._singConExists(conName, imageDir):
+                conPath = op.abspath(op.join(imageDir, conName))
+                return conPath, "Local ({0})".format(conName)
+
+            # Container does not exist, try to pull it
+            if self.imagePath:
+                lockDir = self.imagePath + "-lock"
+            else:
+                lockDir = conName + "-lock"
+
+            maxcount = 36
+            count = 0
+
+            while count < maxcount:
+                count += 1
+                try:
+                    os.mkdir(lockDir)
+                except OSError:
+                    print_info("Another process seems to be pulling the "
+                               "image ({} exists), sleeping 5 seconds"
+                               .format(lockDir))
+                    time.sleep(5)
+                else:
+                    try:
+                        # Check if container was created while waiting
+                        if self._singConExists(conName, imageDir):
+                            conPath = op.abspath(op.join(imageDir, conName))
+                            container_location = "Local ({0})".format(conName)
+                        # Container still does not exist, so pull it
+                        else:
+                            conPath, container_location = self._pullSingImage(
+                                conName, conIndex, conImage, imageDir, lockDir)
+                        return conPath, container_location
+                    finally:
+                        self._cleanUpAfterSingPull(lockDir)
+            # If loop times out, check again for existence, otherwise
+            # raise an error
+            if self._singConExists(conName, imageDir):
+                conPath = op.abspath(op.join(imageDir, conName))
+                return conPath, "Local ({0})".format(conName)
+            raise_error(ExecutorError, "Unable to retrieve Singularity/apptainer"
+                        "image.")
+
+    # Private method that checks if a Singularity/apptainer image exists locally
     def _singConExists(self, conName, imageDir):
         return conName in os.listdir(imageDir)
 
-    # Private method that pulls a Singularity image
+    # Private method that pulls a Singularity/apptainer image
     def _pullSingImage(self, conName, conIndex, conImage, imageDir, lockDir):
         # Give the file a temporary name while it's building
         conNameTmp = conName + ".tmp"
         # Set the pull directory to the specified imagePath
         if self.imagePath:
             os.environ["SINGULARITY_PULLFOLDER"] = imageDir
+            os.environ["APPTAINER_PULLFOLDER"] = imageDir
         pull_loc = "\"{0}\" {1}{2}".format(conNameTmp, conIndex, conImage)
         container_location = ("Pulled from {1}{2} ({0} not found "
                               "in current working "
@@ -568,7 +653,7 @@ class LocalExecutor(object):
         (stdout, stderr), return_code = self._localExecute(
                                                 sing_command)
         if return_code:
-            message = ("Could not pull Singularity"
+            message = ("Could not pull Singularity/apptainer"
                        " image: " + os.linesep + " * Pull command: " +
                        sing_command + os.linesep + " * Error: " +
                        stderr.decode("utf-8"))
@@ -583,14 +668,16 @@ class LocalExecutor(object):
         os.rmdir(lockDir)
         if "SINGULARITY_PULLFOLDER" in os.environ:
             del os.environ["SINGULARITY_PULLFOLDER"]
+        if "APPTAINER_PULLFOLDER" in os.environ:
+            del os.environ["APPTAINER_PULLFOLDER"]
 
     def _isCommandInstalled(self, command):
         return not subprocess.Popen("{} --version".format(command),
                                     shell=True).wait()
 
-    # Chooses whether to use Docker or Singularity based on the
+    # Chooses whether to use Docker or Singularity/apptainer based on the
     # descriptor, executor options and if Docker is installed.
-    def _chooseContainerTypeToUse(self, conType, forceSing=False,
+    def _chooseContainerTypeToUse(self, conType, forceSing=False, forceApptainer=False,
                                   forceDocker=False):
         if ((conType == 'docker' and not forceSing or forceDocker) and
            self._isCommandInstalled('docker')):
@@ -598,9 +685,12 @@ class LocalExecutor(object):
 
         if self._isCommandInstalled('singularity'):
             return "singularity"
+        
+        if self._isCommandInstalled('apptainer'):
+            return "apptainer"
 
         raise_error(ExecutorError, ("Could not find any container engine. " +
-                                    "Make sure that Docker or Singularity " +
+                                    "Make sure that Docker or Singularity/Apptainer " +
                                     "is installed."))
 
     # Private method that attempts to locally execute the given
