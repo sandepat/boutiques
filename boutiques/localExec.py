@@ -640,7 +640,6 @@ class LocalExecutor(object):
         # Set the pull directory to the specified imagePath
         if self.imagePath:
             os.environ["SINGULARITY_PULLFOLDER"] = imageDir
-            os.environ["APPTAINER_PULLFOLDER"] = imageDir
         pull_loc = "\"{0}\" {1}{2}".format(conNameTmp, conIndex, conImage)
         container_location = ("Pulled from {1}{2} ({0} not found "
                               "in current working "
@@ -650,6 +649,19 @@ class LocalExecutor(object):
                                                     conImage)
         # Pull the singularity image
         sing_command = "singularity pull --name " + pull_loc
+        (stdout, stderr), return_code = self._localExecute(
+                                                sing_command)
+        if self.imagePath:
+            os.environ["APPTAINER_PULLFOLDER"] = imageDir
+        pull_loc = "\"{0}\" {1}{2}".format(conNameTmp, conIndex, conImage)
+        container_location = ("Pulled from {1}{2} ({0} not found "
+                              "in current working "
+                              "directory or specified "
+                              "image path)").format(conName,
+                                                    conIndex,
+                                                    conImage)
+        # Pull the singularity image
+        sing_command = "apptainer pull --name " + pull_loc
         (stdout, stderr), return_code = self._localExecute(
                                                 sing_command)
         if return_code:
