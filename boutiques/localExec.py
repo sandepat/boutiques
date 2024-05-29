@@ -499,7 +499,11 @@ class LocalExecutor(object):
                 imageDir = op.normpath(op.dirname(self.imagePath))
             else:
                 conName = conImage.replace("/", "-").replace(":", "-") + ".simg"
-                imageDir = op.normpath("")
+                if os.environ.get('SINGULARITY_PULLFOLDER'):
+                    imageDir = os.environ.get('SINGULARITY_PULLFOLDER')
+                else:
+                    imageDir = op.normpath("")
+
 
             # Check if container already exists
             if self._singConExists(conName, imageDir):
