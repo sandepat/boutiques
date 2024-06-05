@@ -385,8 +385,7 @@ class LocalExecutor(object):
                         envString += "SINGULARITYENV_{0}='{1}' ".format(key,
                                                                         val)
                 singularity_mounts = '-B ' + ' -B '.join(mount_strings)
-                container_command = (envString + 'singularity exec '
-                                     '--cleanenv ' +
+                container_command = (envString + 'singularity exec ' +
                                      singularity_mounts +
                                      ' -W ' + launchDir + ' ' +
                                      conOptsString +
